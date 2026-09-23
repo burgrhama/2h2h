@@ -14,15 +14,15 @@ export default function HomePage() {
   const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0])
   const [selectedColor, setSelectedColor] = useState(PLAYER_COLORS[0])
 
-  const normalizePlayerName = (value: string) => {
+  const sanitizePlayerName = (value: string) => {
     const trimmed = value.trim()
     if (!trimmed) return DEFAULT_PLAYER_NAME
-    return trimmed.toLowerCase() === '2h2h' ? '2h2h' : DEFAULT_PLAYER_NAME
+    return trimmed.replace(/\s+/g, ' ').slice(0, 24)
   }
 
   const makePlayer = () => ({
     id: `player-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-    name: normalizePlayerName(playerName),
+    name: sanitizePlayerName(playerName),
     avatar: selectedAvatar,
     color: selectedColor,
     score: 0,
@@ -31,17 +31,16 @@ export default function HomePage() {
   })
 
   const handleCreateRoom = () => {
-    const safeName = normalizePlayerName(playerName)
+    const safeName = sanitizePlayerName(playerName)
     setPlayerName(safeName)
     createRoom({ ...makePlayer(), name: safeName })
     setScreen('home')
-    setPlayerName(safeName)
     setJoinRoomCode('')
     setJoinError('')
   }
 
   const handleJoinRoom = () => {
-    const safeName = normalizePlayerName(playerName)
+    const safeName = sanitizePlayerName(playerName)
     setPlayerName(safeName)
 
     if (!joinRoomCode.trim()) {
@@ -98,7 +97,7 @@ export default function HomePage() {
               <input
                 type="text"
                 value={playerName}
-                onChange={(e) => setPlayerName(normalizePlayerName(e.target.value))}
+                onChange={(e) => setPlayerName(e.target.value.slice(0, 24))}
                 placeholder={DEFAULT_PLAYER_NAME}
                 className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-game-purple/50 transition"
               />
@@ -215,7 +214,7 @@ export default function HomePage() {
               <input
                 type="text"
                 value={playerName}
-                onChange={(e) => setPlayerName(normalizePlayerName(e.target.value))}
+                onChange={(e) => setPlayerName(e.target.value.slice(0, 24))}
                 placeholder={DEFAULT_PLAYER_NAME}
                 className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-game-purple/50 transition"
               />
