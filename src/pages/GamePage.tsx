@@ -9,6 +9,7 @@ import RoundMemory from '../components/rounds/RoundMemory'
 import RoundTimedAction from '../components/rounds/RoundTimedAction'
 import RoundDebate from '../components/rounds/RoundDebate'
 import RoundChaos from '../components/rounds/RoundChaos'
+import RoundOpenResponse from '../components/rounds/RoundOpenResponse'
 import VibeBreakModal from '../components/VibeBreakModal'
 
 export default function GamePage() {
@@ -41,16 +42,12 @@ export default function GamePage() {
       case 'text-guess':
         return <RoundTextGuess />
       case 'drawing':
-        return <RoundDrawing />
       case 'memory':
-        return <RoundMemory />
       case 'timed-action':
-        return <RoundTimedAction />
       case 'debate':
-        return <RoundDebate />
       case 'text-input':
       case 'chaos':
-        return <RoundChaos />
+        return <RoundOpenResponse />
       default:
         return <RoundChoice />
     }

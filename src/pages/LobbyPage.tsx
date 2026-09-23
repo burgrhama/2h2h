@@ -5,12 +5,12 @@ import GameSettingsPage from './GameSettingsPage'
 
 export default function LobbyPage() {
   const { gameState, currentPlayer } = useGame()
-  const [showSettings, setShowSettings] = useState(gameState?.gameState === 'SETTINGS')
+  const [showSettings, setShowSettings] = useState(false)
 
   if (!gameState) return null
 
-  if (showSettings) {
-    return <GameSettingsPage onComplete={() => setShowSettings(false)} />
+  if (showSettings || gameState.gameState === 'SETTINGS') {
+    return <GameSettingsPage />
   }
 
   const isHostReady = gameState.player1?.ready && gameState.player2?.ready

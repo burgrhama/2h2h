@@ -385,9 +385,13 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [sendPeerRoom])
 
   const saveAndPublish = useCallback((nextEngine: GameEngine) => {
-    setGameState(nextEngine.getState())
-    persistRoom(nextEngine)
-    publishRoom(nextEngine)
+    const snapshot = JSON.parse(JSON.stringify(nextEngine.getState())) as GameState
+    const syncedEngine = GameEngine.fromState(snapshot)
+    setEngine(syncedEngine)
+    roomEngineRef.current = syncedEngine
+    setGameState(snapshot)
+    persistRoom(syncedEngine)
+    publishRoom(syncedEngine)
   }, [persistRoom, publishRoom])
 
   const updateSettings = useCallback((settings: RoomSettings) => {

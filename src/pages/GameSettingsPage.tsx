@@ -3,11 +3,7 @@ import { motion } from 'framer-motion'
 import { useGame } from '../context/GameContext'
 import { Difficulty, GameCategory } from '../types/rounds'
 
-interface GameSettingsPageProps {
-  onComplete: () => void
-}
-
-export default function GameSettingsPage({ onComplete }: GameSettingsPageProps) {
+export default function GameSettingsPage() {
   const { gameState, updateSettings, startGame } = useGame()
   const [gameLength, setGameLength] = useState<10 | 25 | 50 | 100 | 'random'>(25)
   const [difficulty, setDifficulty] = useState<Difficulty>('chill')
@@ -170,13 +166,6 @@ export default function GameSettingsPage({ onComplete }: GameSettingsPageProps) 
         </div>
 
         {/* Back button */}
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          onClick={onComplete}
-          className="text-white/50 hover:text-white/70 transition text-center w-full"
-        >
-          Back to Lobby
-        </motion.button>
       </motion.div>
     </div>
   )
