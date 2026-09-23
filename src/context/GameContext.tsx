@@ -1,5 +1,6 @@
 import React, { createContext, useContext, ReactNode, useState, useCallback, useEffect, useRef } from 'react'
 import { io, Socket } from 'socket.io-client'
+import Peer, { DataConnection } from 'peerjs'
 import GameEngine, { GameState, Player, RoomSettings } from '../engine/GameEngine'
 
 const LEGACY_ROOM_STORAGE_KEY = 'two-high-2-handle-room'
@@ -29,6 +30,13 @@ interface GameContextType {
 const GameContext = createContext<GameContextType | undefined>(undefined)
 
 export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const socketRef = useRef<Socket | null>(null)
+  const currentPlayerIdRef = useRef<string | null>(null)
+  const restRoomCodeRef = useRef<string | null>(null)
+  const peerRef = useRef<Peer | null>(null)
+  const peerConnectionsRef = useRef<DataConnection[]>([])
+  const roomEngineRef = useRef<GameEngine | null>(null)
+
   const syncRoomState = useCallback((room: GameState | null) => {
     if (!room) {
       setEngine(null)
@@ -39,6 +47,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const nextEngine = GameEngine.fromState(room)
     setEngine(nextEngine)
+    roomEngineRef.current = nextEngine
     setGameState(room)
     setCurrentPlayer(room.player1 ?? room.player2 ?? null)
   }, [])
@@ -96,13 +105,49 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     window.localStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, roomKey)
   }, [])
 
+  const applyPeerRoom = useCallback((room: GameState) => {
+    const nextEngine = GameEngine.fromState(room)
+    roomEngineRef.current = nextEngine
+    setEngine(nextEngine)
+    setGameState(room)
+    setCurrentPlayer([room.player1, room.player2]
+      .find((player) => player?.id === currentPlayerIdRef.current) ?? null)
+    persistRoom(nextEngine)
+  }, [persistRoom])
+
+  const sendPeerRoom = useCallback((room: GameState) => {
+    peerConnectionsRef.current = peerConnectionsRef.current.filter((connection) => connection.open)
+    for (const connection of peerConnectionsRef.current) {
+      connection.send({ type: 'room', room })
+    }
+  }, [])
+
+  const waitForPeerOpen = useCallback((peer: Peer, timeoutMs = 10000) => new Promise<void>((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      cleanup()
+      reject(new Error('Peer connection timed out'))
+    }, timeoutMs)
+    const handleOpen = () => {
+      cleanup()
+      resolve()
+    }
+    const handleError = (error: Error) => {
+      cleanup()
+      reject(error)
+    }
+    const cleanup = () => {
+      window.clearTimeout(timeout)
+      peer.off('open', handleOpen)
+      peer.off('error', handleError)
+    }
+    peer.once('open', handleOpen)
+    peer.once('error', handleError)
+  }), [])
+
   const [engine, setEngine] = useState<GameEngine | null>(null)
   const [gameState, setGameState] = useState<GameState | null>(null)
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null)
   const [socket, setSocket] = useState<Socket | null>(null)
-  const socketRef = useRef<Socket | null>(null)
-  const currentPlayerIdRef = useRef<string | null>(null)
-  const restRoomCodeRef = useRef<string | null>(null)
 
   useEffect(() => {
     const configuredSocketUrl = (import.meta as ImportMeta & {
@@ -226,21 +271,38 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const createRoom = useCallback(async (player: Player) => {
     const activeSocket = await waitForSocket()
     if (!activeSocket && window.location.hostname !== 'localhost') {
-      const response = await fetch('/api/rooms', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'create', player }),
-      })
-      if (!response.ok) return false
-      const payload = await response.json() as { ok: boolean, room?: GameState }
-      if (!payload.ok || !payload.room) return false
+      const roomCode = generateRoomCode()
+      const nextEngine = new GameEngine(roomCode, player.id)
+      nextEngine.addPlayer(player)
+      const peer = new Peer(roomCode)
+      try {
+        await waitForPeerOpen(peer)
+      } catch {
+        peer.destroy()
+        return false
+      }
+
       currentPlayerIdRef.current = player.id
-      restRoomCodeRef.current = payload.room.roomCode
-      const nextEngine = GameEngine.fromState(payload.room)
+      restRoomCodeRef.current = roomCode
+      peerRef.current = peer
+      roomEngineRef.current = nextEngine
+      peer.on('connection', (connection) => {
+        peerConnectionsRef.current.push(connection)
+        connection.on('open', () => connection.send({ type: 'room', room: nextEngine.getState() }))
+        connection.on('data', (message: { type?: string, player?: Player }) => {
+          if (message.type !== 'join' || !message.player || nextEngine.getState().player2) return
+          nextEngine.addPlayer(message.player)
+          saveAndPublish(nextEngine)
+        })
+        connection.on('close', () => {
+          peerConnectionsRef.current = peerConnectionsRef.current.filter((item) => item !== connection)
+        })
+      })
       setEngine(nextEngine)
-      setGameState(payload.room)
+      setGameState(nextEngine.getState())
       setCurrentPlayer(player)
       persistRoom(nextEngine)
+      restRoomCodeRef.current = roomCode
       return true
     }
     if (!activeSocket) return false
@@ -268,21 +330,38 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const activeSocket = await waitForSocket()
     if (!normalizedCode) return false
     if (!activeSocket && window.location.hostname !== 'localhost') {
-      const response = await fetch('/api/rooms', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'join', roomCode: normalizedCode, player }),
+      const peer = new Peer()
+      try {
+        await waitForPeerOpen(peer)
+      } catch {
+        peer.destroy()
+        return false
+      }
+      const connection = peer.connect(normalizedCode, { reliable: true })
+      const connected = await new Promise<boolean>((resolve) => {
+        const timeout = window.setTimeout(() => resolve(false), 10000)
+        connection.once('open', () => {
+          window.clearTimeout(timeout)
+          resolve(true)
+        })
+        connection.once('error', () => {
+          window.clearTimeout(timeout)
+          resolve(false)
+        })
       })
-      if (!response.ok) return false
-      const payload = await response.json() as { ok: boolean, room?: GameState }
-      if (!payload.ok || !payload.room) return false
+      if (!connected) {
+        peer.destroy()
+        return false
+      }
+
       currentPlayerIdRef.current = player.id
       restRoomCodeRef.current = normalizedCode
-      const nextEngine = GameEngine.fromState(payload.room)
-      setEngine(nextEngine)
-      setGameState(payload.room)
-      setCurrentPlayer(player)
-      persistRoom(nextEngine)
+      peerRef.current = peer
+      peerConnectionsRef.current = [connection]
+      connection.on('data', (message: { type?: string, room?: GameState }) => {
+        if (message.type === 'room' && message.room) applyPeerRoom(message.room)
+      })
+      connection.send({ type: 'join', player })
       return true
     }
     if (!activeSocket) return false
@@ -319,17 +398,9 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         room: nextState,
       })
     } else if (window.location.hostname !== 'localhost') {
-      void fetch('/api/rooms', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'update',
-          roomCode: nextState.roomCode,
-          room: nextState,
-        }),
-      })
+      sendPeerRoom(nextState)
     }
-  }, [])
+  }, [sendPeerRoom])
 
   const saveAndPublish = useCallback((nextEngine: GameEngine) => {
     setGameState(nextEngine.getState())
