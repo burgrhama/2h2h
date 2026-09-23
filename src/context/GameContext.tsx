@@ -102,6 +102,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [socket, setSocket] = useState<Socket | null>(null)
   const socketRef = useRef<Socket | null>(null)
   const currentPlayerIdRef = useRef<string | null>(null)
+  const restRoomCodeRef = useRef<string | null>(null)
 
   useEffect(() => {
     const configuredSocketUrl = (import.meta as ImportMeta & {
@@ -146,6 +147,30 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       socket.off('room:update')
     }
   }, [persistRoom, socket])
+
+  useEffect(() => {
+    if (socket || !restRoomCodeRef.current) return
+
+    const pollRoom = async () => {
+      const code = restRoomCodeRef.current
+      if (!code) return
+      const response = await fetch(`/api/rooms?roomCode=${encodeURIComponent(code)}`)
+      if (!response.ok) return
+      const payload = await response.json() as { room?: GameState }
+      if (!payload.room) return
+      const nextEngine = GameEngine.fromState(payload.room)
+      setEngine(nextEngine)
+      setGameState(payload.room)
+      setCurrentPlayer([payload.room.player1, payload.room.player2]
+        .find((player) => player?.id === currentPlayerIdRef.current) ?? null)
+      persistRoom(nextEngine)
+    }
+
+    const interval = window.setInterval(() => {
+      void pollRoom()
+    }, 1000)
+    return () => window.clearInterval(interval)
+  }, [gameState?.roomCode, persistRoom, socket])
 
   const generateRoomCode = (): string => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
@@ -200,6 +225,24 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const createRoom = useCallback(async (player: Player) => {
     const activeSocket = await waitForSocket()
+    if (!activeSocket && window.location.hostname !== 'localhost') {
+      const response = await fetch('/api/rooms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create', player }),
+      })
+      if (!response.ok) return false
+      const payload = await response.json() as { ok: boolean, room?: GameState }
+      if (!payload.ok || !payload.room) return false
+      currentPlayerIdRef.current = player.id
+      restRoomCodeRef.current = payload.room.roomCode
+      const nextEngine = GameEngine.fromState(payload.room)
+      setEngine(nextEngine)
+      setGameState(payload.room)
+      setCurrentPlayer(player)
+      persistRoom(nextEngine)
+      return true
+    }
     if (!activeSocket) return false
 
     return new Promise<boolean>((resolve) => {
@@ -223,7 +266,26 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const joinRoom = useCallback(async (roomCode: string, player: Player) => {
     const normalizedCode = roomCode.trim().toUpperCase()
     const activeSocket = await waitForSocket()
-    if (!normalizedCode || !activeSocket) return false
+    if (!normalizedCode) return false
+    if (!activeSocket && window.location.hostname !== 'localhost') {
+      const response = await fetch('/api/rooms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'join', roomCode: normalizedCode, player }),
+      })
+      if (!response.ok) return false
+      const payload = await response.json() as { ok: boolean, room?: GameState }
+      if (!payload.ok || !payload.room) return false
+      currentPlayerIdRef.current = player.id
+      restRoomCodeRef.current = normalizedCode
+      const nextEngine = GameEngine.fromState(payload.room)
+      setEngine(nextEngine)
+      setGameState(payload.room)
+      setCurrentPlayer(player)
+      persistRoom(nextEngine)
+      return true
+    }
+    if (!activeSocket) return false
 
     let handled = false
 
@@ -255,6 +317,16 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       activeSocket.emit('room:update', {
         roomCode: nextState.roomCode,
         room: nextState,
+      })
+    } else if (window.location.hostname !== 'localhost') {
+      void fetch('/api/rooms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update',
+          roomCode: nextState.roomCode,
+          room: nextState,
+        }),
       })
     }
   }, [])
