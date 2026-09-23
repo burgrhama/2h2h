@@ -264,12 +264,17 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       roomEngineRef.current = nextEngine
       peer.on('connection', (connection) => {
         peerConnectionsRef.current.push(connection)
-        connection.on('open', () => connection.send({ type: 'room', room: nextEngine.getState() }))
+        connection.on('open', () => {
+          const currentRoom = roomEngineRef.current?.getState()
+          if (currentRoom) connection.send({ type: 'room', room: currentRoom })
+        })
         connection.on('data', (message: { type?: string, player?: Player }) => {
-          if (message.type !== 'join' || !message.player || nextEngine.getState().player2) return
-          nextEngine.addPlayer(message.player)
-          applyPeerRoom(nextEngine.getState())
-          sendPeerRoom(nextEngine.getState())
+          const currentEngine = roomEngineRef.current
+          if (message.type !== 'join' || !message.player || !currentEngine || currentEngine.getState().player2) return
+          currentEngine.addPlayer(message.player)
+          const currentRoom = currentEngine.getState()
+          applyPeerRoom(currentRoom)
+          sendPeerRoom(currentRoom)
         })
         connection.on('close', () => {
           peerConnectionsRef.current = peerConnectionsRef.current.filter((item) => item !== connection)
@@ -300,7 +305,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         resolve(true)
       })
     })
-  }, [persistRoom, waitForSocket])
+  }, [applyPeerRoom, persistRoom, sendPeerRoom, waitForSocket])
 
   const joinRoom = useCallback(async (roomCode: string, player: Player) => {
     const normalizedCode = roomCode.trim().toUpperCase()
