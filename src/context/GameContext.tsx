@@ -193,30 +193,6 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [persistRoom, socket])
 
-  useEffect(() => {
-    if (socket || !restRoomCodeRef.current) return
-
-    const pollRoom = async () => {
-      const code = restRoomCodeRef.current
-      if (!code) return
-      const response = await fetch(`/api/rooms?roomCode=${encodeURIComponent(code)}`)
-      if (!response.ok) return
-      const payload = await response.json() as { room?: GameState }
-      if (!payload.room) return
-      const nextEngine = GameEngine.fromState(payload.room)
-      setEngine(nextEngine)
-      setGameState(payload.room)
-      setCurrentPlayer([payload.room.player1, payload.room.player2]
-        .find((player) => player?.id === currentPlayerIdRef.current) ?? null)
-      persistRoom(nextEngine)
-    }
-
-    const interval = window.setInterval(() => {
-      void pollRoom()
-    }, 1000)
-    return () => window.clearInterval(interval)
-  }, [gameState?.roomCode, persistRoom, socket])
-
   const generateRoomCode = (): string => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
     let code = ''
@@ -292,7 +268,8 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         connection.on('data', (message: { type?: string, player?: Player }) => {
           if (message.type !== 'join' || !message.player || nextEngine.getState().player2) return
           nextEngine.addPlayer(message.player)
-          saveAndPublish(nextEngine)
+          applyPeerRoom(nextEngine.getState())
+          sendPeerRoom(nextEngine.getState())
         })
         connection.on('close', () => {
           peerConnectionsRef.current = peerConnectionsRef.current.filter((item) => item !== connection)
