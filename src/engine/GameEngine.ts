@@ -76,6 +76,12 @@ class GameEngine {
     return this.gameState
   }
 
+  static fromState(state: GameState): GameEngine {
+    const engine = new GameEngine(state.roomCode, state.hostId)
+    engine.gameState = state
+    return engine
+  }
+
   addPlayer(player: Player): void {
     if (!this.gameState.player1) {
       this.gameState.player1 = player

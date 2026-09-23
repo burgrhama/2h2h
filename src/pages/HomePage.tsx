@@ -3,33 +3,67 @@ import { motion } from 'framer-motion'
 import { useGame } from '../context/GameContext'
 import { AVATARS, PLAYER_COLORS } from '../types/rounds'
 
+const DEFAULT_PLAYER_NAME = '2High2Handle'
+
 export default function HomePage() {
-  const { createRoom } = useGame()
+  const { createRoom, joinRoom } = useGame()
   const [screen, setScreen] = useState<'home' | 'create' | 'join'>('home')
-  const [playerName, setPlayerName] = useState('')
+  const [playerName, setPlayerName] = useState(DEFAULT_PLAYER_NAME)
+  const [joinRoomCode, setJoinRoomCode] = useState('')
+  const [joinError, setJoinError] = useState('')
   const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0])
   const [selectedColor, setSelectedColor] = useState(PLAYER_COLORS[0])
 
-  const handleCreateRoom = () => {
-    if (!playerName.trim()) return
+  const normalizePlayerName = (value: string) => {
+    const trimmed = value.trim()
+    if (!trimmed) return DEFAULT_PLAYER_NAME
+    return trimmed.toLowerCase() === '2h2h' ? '2h2h' : DEFAULT_PLAYER_NAME
+  }
 
-    createRoom({
-      id: `player-${Date.now()}`,
-      name: playerName,
-      avatar: selectedAvatar,
-      color: selectedColor,
-      score: 0,
-      connected: true,
-      ready: false,
-    })
+  const makePlayer = () => ({
+    id: `player-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    name: normalizePlayerName(playerName),
+    avatar: selectedAvatar,
+    color: selectedColor,
+    score: 0,
+    connected: true,
+    ready: false,
+  })
+
+  const handleCreateRoom = () => {
+    const safeName = normalizePlayerName(playerName)
+    setPlayerName(safeName)
+    createRoom({ ...makePlayer(), name: safeName })
+    setScreen('home')
+    setPlayerName(safeName)
+    setJoinRoomCode('')
+    setJoinError('')
+  }
+
+  const handleJoinRoom = () => {
+    const safeName = normalizePlayerName(playerName)
+    setPlayerName(safeName)
+
+    if (!joinRoomCode.trim()) {
+      setJoinError('Enter your name and a room code.')
+      return
+    }
+
+    const ok = joinRoom(joinRoomCode, { ...makePlayer(), name: safeName })
+    if (!ok) {
+      setJoinError('That room code is invalid or the room is already full.')
+      return
+    }
 
     setScreen('home')
+    setPlayerName('')
+    setJoinRoomCode('')
+    setJoinError('')
   }
 
   if (screen === 'create') {
     return (
       <div className="min-h-screen bg-gradient-to-b from-game-dark to-game-darker flex items-center justify-center p-4">
-        {/* Animated clouds background */}
         <div className="fixed inset-0 overflow-hidden pointer-events-none">
           <motion.div
             animate={{ x: [0, 100, 0] }}
@@ -57,7 +91,6 @@ export default function HomePage() {
           </h1>
 
           <div className="space-y-6">
-            {/* Name input */}
             <div>
               <label className="block text-sm font-semibold mb-2 text-white/80">
                 Your Name
@@ -65,13 +98,12 @@ export default function HomePage() {
               <input
                 type="text"
                 value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
-                placeholder="Enter a nickname..."
+                onChange={(e) => setPlayerName(normalizePlayerName(e.target.value))}
+                placeholder={DEFAULT_PLAYER_NAME}
                 className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-game-purple/50 transition"
               />
             </div>
 
-            {/* Avatar selection */}
             <div>
               <label className="block text-sm font-semibold mb-3 text-white/80">
                 Pick Your Vibe
@@ -95,7 +127,6 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Color selection */}
             <div>
               <label className="block text-sm font-semibold mb-3 text-white/80">
                 Your Color
@@ -117,7 +148,6 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Preview */}
             <div className="glass-card p-4 text-center">
               <p className="text-sm text-white/60 mb-2">Your Avatar</p>
               <div className="text-5xl mb-2">{selectedAvatar}</div>
@@ -126,7 +156,6 @@ export default function HomePage() {
               </p>
             </div>
 
-            {/* Buttons */}
             <div className="space-y-3">
               <motion.button
                 whileHover={{ scale: 1.02 }}
@@ -143,6 +172,136 @@ export default function HomePage() {
                 onClick={() => {
                   setScreen('home')
                   setPlayerName('')
+                  setJoinError('')
+                }}
+                className="glass-button-secondary w-full"
+              >
+                BACK
+              </motion.button>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    )
+  }
+
+  if (screen === 'join') {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-game-dark to-game-darker flex items-center justify-center p-4">
+        <div className="fixed inset-0 overflow-hidden pointer-events-none">
+          <motion.div
+            animate={{ x: [0, 100, 0] }}
+            transition={{ duration: 18, repeat: Infinity }}
+            className="absolute top-24 left-16 text-game-purple/20 text-6xl"
+          >
+            ☁️
+          </motion.div>
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-card p-8 w-full max-w-md"
+        >
+          <h1 className="text-3xl font-bold mb-8 text-center text-gradient">
+            JOIN A ROOM
+          </h1>
+
+          <div className="space-y-6">
+            <div>
+              <label className="block text-sm font-semibold mb-2 text-white/80">
+                Your Name
+              </label>
+              <input
+                type="text"
+                value={playerName}
+                onChange={(e) => setPlayerName(normalizePlayerName(e.target.value))}
+                placeholder={DEFAULT_PLAYER_NAME}
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-game-purple/50 transition"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold mb-2 text-white/80">
+                Room Code
+              </label>
+              <input
+                type="text"
+                value={joinRoomCode}
+                onChange={(e) => setJoinRoomCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5))}
+                placeholder="ABCDE"
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-white/30 uppercase tracking-[0.35em] focus:outline-none focus:border-game-purple/50 transition"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold mb-3 text-white/80">
+                Pick Your Vibe
+              </label>
+              <div className="grid grid-cols-6 gap-2">
+                {AVATARS.map((avatar) => (
+                  <motion.button
+                    key={avatar}
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setSelectedAvatar(avatar)}
+                    className={`text-3xl p-2 rounded-lg transition ${
+                      selectedAvatar === avatar
+                        ? 'bg-game-purple/30 border-2 border-game-purple'
+                        : 'bg-white/5 border border-white/10 hover:bg-white/10'
+                    }`}
+                  >
+                    {avatar}
+                  </motion.button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold mb-3 text-white/80">
+                Your Color
+              </label>
+              <div className="grid grid-cols-6 gap-2">
+                {PLAYER_COLORS.map((color) => (
+                  <motion.button
+                    key={color}
+                    whileHover={{ scale: 1.1 }}
+                    onClick={() => setSelectedColor(color)}
+                    className={`w-full h-10 rounded-lg transition border-2 ${
+                      selectedColor === color
+                        ? 'border-white'
+                        : 'border-transparent'
+                    }`}
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {joinError && (
+              <p className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+                {joinError}
+              </p>
+            )}
+
+            <div className="space-y-3">
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={handleJoinRoom}
+                disabled={!playerName.trim() || !joinRoomCode.trim()}
+                className="glass-button-primary w-full disabled:opacity-50"
+              >
+                JOIN ROOM
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => {
+                  setScreen('home')
+                  setPlayerName('')
+                  setJoinRoomCode('')
+                  setJoinError('')
                 }}
                 className="glass-button-secondary w-full"
               >
@@ -157,10 +316,9 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-game-dark to-game-darker flex items-center justify-center p-4 overflow-hidden">
-      {/* Animated background elements */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <motion.div
-          animate={{ 
+          animate={{
             x: [0, 50, 0],
             y: [0, 30, 0]
           }}
@@ -170,7 +328,7 @@ export default function HomePage() {
           ☁️
         </motion.div>
         <motion.div
-          animate={{ 
+          animate={{
             x: [50, 0, 50],
             y: [30, 0, 30]
           }}
@@ -180,7 +338,7 @@ export default function HomePage() {
           ☁️
         </motion.div>
         <motion.div
-          animate={{ 
+          animate={{
             x: [-30, 30, -30],
             y: [20, -20, 20]
           }}
@@ -191,17 +349,16 @@ export default function HomePage() {
         </motion.div>
       </div>
 
-      {/* Floating particles */}
       <div className="fixed inset-0 pointer-events-none">
         {[...Array(5)].map((_, i) => (
           <motion.div
             key={i}
-            animate={{ 
+            animate={{
               y: [0, -100, 0],
               opacity: [0.1, 0.3, 0.1]
             }}
-            transition={{ 
-              duration: 5 + i, 
+            transition={{
+              duration: 5 + i,
               repeat: Infinity,
               delay: i * 0.5
             }}
@@ -214,14 +371,12 @@ export default function HomePage() {
         ))}
       </div>
 
-      {/* Main content */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8 }}
         className="relative z-10 text-center max-w-2xl"
       >
-        {/* Hero */}
         <motion.div
           animate={{ y: [0, -10, 0] }}
           transition={{ duration: 4, repeat: Infinity }}
@@ -237,12 +392,10 @@ export default function HomePage() {
           A two-player game for people who are ready to overthink absolutely everything.
         </p>
 
-        {/* Privacy note */}
         <p className="text-sm text-white/40 mb-12">
           No account. No profile. Just a game.
         </p>
 
-        {/* Buttons */}
         <div className="space-y-4 max-w-sm mx-auto">
           <motion.button
             whileHover={{ scale: 1.05 }}
@@ -263,7 +416,6 @@ export default function HomePage() {
           </motion.button>
         </div>
 
-        {/* Secondary buttons */}
         <div className="grid grid-cols-2 gap-4 mt-8 max-w-sm mx-auto">
           <motion.button
             whileHover={{ scale: 1.02 }}
