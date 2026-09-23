@@ -268,7 +268,11 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const currentRoom = roomEngineRef.current?.getState()
           if (currentRoom) connection.send({ type: 'room', room: currentRoom })
         })
-        connection.on('data', (message: { type?: string, player?: Player }) => {
+        connection.on('data', (message: { type?: string, player?: Player, room?: GameState }) => {
+          if (message.type === 'room' && message.room) {
+            applyPeerRoom(message.room)
+            return
+          }
           const currentEngine = roomEngineRef.current
           if (message.type !== 'join' || !message.player || !currentEngine || currentEngine.getState().player2) return
           currentEngine.addPlayer(message.player)
