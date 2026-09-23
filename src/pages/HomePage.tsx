@@ -11,6 +11,7 @@ export default function HomePage() {
   const [playerName, setPlayerName] = useState(DEFAULT_PLAYER_NAME)
   const [joinRoomCode, setJoinRoomCode] = useState('')
   const [joinError, setJoinError] = useState('')
+  const [createError, setCreateError] = useState('')
   const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0])
   const [selectedColor, setSelectedColor] = useState(PLAYER_COLORS[0])
 
@@ -30,16 +31,22 @@ export default function HomePage() {
     ready: false,
   })
 
-  const handleCreateRoom = () => {
+  const handleCreateRoom = async () => {
     const safeName = sanitizePlayerName(playerName)
     setPlayerName(safeName)
-    createRoom({ ...makePlayer(), name: safeName })
+    const ok = await createRoom({ ...makePlayer(), name: safeName })
+    if (!ok) {
+      setCreateError('Unable to connect to the multiplayer server. Please try again.')
+      return
+    }
+
     setScreen('home')
     setJoinRoomCode('')
     setJoinError('')
+    setCreateError('')
   }
 
-  const handleJoinRoom = () => {
+  const handleJoinRoom = async () => {
     const safeName = sanitizePlayerName(playerName)
     setPlayerName(safeName)
 
@@ -48,7 +55,7 @@ export default function HomePage() {
       return
     }
 
-    const ok = joinRoom(joinRoomCode, { ...makePlayer(), name: safeName })
+    const ok = await joinRoom(joinRoomCode, { ...makePlayer(), name: safeName })
     if (!ok) {
       setJoinError('That room code is invalid or the room is already full.')
       return
@@ -156,6 +163,11 @@ export default function HomePage() {
             </div>
 
             <div className="space-y-3">
+              {createError && (
+                <p className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+                  {createError}
+                </p>
+              )}
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
@@ -171,6 +183,7 @@ export default function HomePage() {
                 onClick={() => {
                   setScreen('home')
                   setPlayerName('')
+                  setCreateError('')
                   setJoinError('')
                 }}
                 className="glass-button-secondary w-full"

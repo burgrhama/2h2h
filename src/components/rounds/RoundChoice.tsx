@@ -4,7 +4,7 @@ import { useGame } from '../../context/GameContext'
 import CountdownTimer from '../CountdownTimer'
 
 export default function RoundChoice() {
-  const { gameState, currentPlayer, engine, submitAnswer, lockAnswer } = useGame()
+  const { gameState, currentPlayer, engine, submitAnswer, lockAnswer, finishRound } = useGame()
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
 
   if (!gameState || !currentPlayer || !engine) return null
@@ -40,6 +40,10 @@ export default function RoundChoice() {
       currentRound.category === 'guess-me' 
         ? (isP1 && myAnswer === p2Actual) || (!isP1 && myAnswer === p1Actual)
         : myAnswer === otherAnswer
+    const player1Correct = currentRound.category === 'guess-me'
+      ? gameState.player1Answer === gameState.player2Answer
+      : gameState.player1Answer === gameState.player2Answer
+    const player2Correct = player1Correct
 
     return (
       <motion.div
@@ -103,11 +107,12 @@ export default function RoundChoice() {
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           onClick={() => {
-            // This should be handled by parent to move to next round
+            finishRound(player1Correct, player2Correct)
           }}
+          disabled={currentPlayer.id !== gameState.hostId}
           className="glass-button-primary w-full py-4"
         >
-          NEXT ROUND
+          {currentPlayer.id === gameState.hostId ? 'NEXT ROUND' : 'WAITING FOR HOST'}
         </motion.button>
       </motion.div>
     )

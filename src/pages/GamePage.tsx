@@ -12,7 +12,7 @@ import RoundChaos from '../components/rounds/RoundChaos'
 import VibeBreakModal from '../components/VibeBreakModal'
 
 export default function GamePage() {
-  const { gameState, currentPlayer, engine } = useGame()
+  const { gameState, currentPlayer, engine, skipRound } = useGame()
   const [showVibeBreak, setShowVibeBreak] = useState(false)
   const [flavorText, setFlavorText] = useState('')
 
@@ -157,6 +157,16 @@ export default function GamePage() {
 
         {/* Vibe break button */}
         <div className="flex justify-center mb-4">
+          {currentPlayer.id === gameState.hostId && (
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={skipRound}
+              className="text-white/50 hover:text-white/70 transition mr-6"
+            >
+              SKIP ROUND
+            </motion.button>
+          )}
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}

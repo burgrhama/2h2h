@@ -1,14 +1,19 @@
-import React, { createContext, useContext, ReactNode, useState, useCallback, useEffect } from 'react'
+import React, { createContext, useContext, ReactNode, useState, useCallback, useEffect, useRef } from 'react'
+import { io, Socket } from 'socket.io-client'
 import GameEngine, { GameState, Player, RoomSettings } from '../engine/GameEngine'
 
-const ROOM_STORAGE_KEY = 'two-high-2-handle-room'
+const LEGACY_ROOM_STORAGE_KEY = 'two-high-2-handle-room'
+const ROOM_STORAGE_PREFIX = 'two-high-2-handle-room-'
+const ACTIVE_ROOM_STORAGE_KEY = 'two-high-2-handle-active-room'
+
+const getRoomStorageKey = (roomCode: string): string => `${ROOM_STORAGE_PREFIX}${roomCode.trim().toUpperCase()}`
 
 interface GameContextType {
   engine: GameEngine | null
   gameState: GameState | null
   currentPlayer: Player | null
-  createRoom: (player: Player) => void
-  joinRoom: (roomCode: string, player: Player) => boolean
+  createRoom: (player: Player) => Promise<boolean>
+  joinRoom: (roomCode: string, player: Player) => Promise<boolean>
   updateSettings: (settings: RoomSettings) => void
   startGame: () => void
   submitAnswer: (answer: string | number) => void
@@ -16,6 +21,7 @@ interface GameContextType {
   nextRound: () => void
   skipRound: () => void
   calculateScore: (isCorrect: boolean) => void
+  finishRound: (player1Correct: boolean, player2Correct: boolean) => void
   endGame: () => void
   restartGame: () => void
 }
@@ -37,11 +43,12 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setCurrentPlayer(room.player1 ?? room.player2 ?? null)
   }, [])
 
-  const loadRoomFromStorage = useCallback((): GameState | null => {
+  const loadRoomFromStorage = useCallback((roomCode?: string): GameState | null => {
     if (typeof window === 'undefined') return null
 
     try {
-      const savedRoom = window.localStorage.getItem(ROOM_STORAGE_KEY)
+      const targetKey = roomCode ? getRoomStorageKey(roomCode) : window.localStorage.getItem(ACTIVE_ROOM_STORAGE_KEY) || LEGACY_ROOM_STORAGE_KEY
+      const savedRoom = window.localStorage.getItem(targetKey)
       if (!savedRoom) return null
 
       const parsedRoom = JSON.parse(savedRoom) as GameState
@@ -51,34 +58,94 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [])
 
-  const persistRoom = useCallback((engineToSave: GameEngine) => {
-    if (typeof window === 'undefined') return
-    const payload = JSON.stringify(engineToSave.getState())
-    window.localStorage.setItem(ROOM_STORAGE_KEY, payload)
-  }, [])
+  const findRoomByCode = useCallback((roomCode: string): GameState | null => {
+    if (typeof window === 'undefined') return null
 
-  const [engine, setEngine] = useState<GameEngine | null>(() => {
-    const savedRoom = loadRoomFromStorage()
-    return savedRoom ? GameEngine.fromState(savedRoom) : null
-  })
-  const [gameState, setGameState] = useState<GameState | null>(() => loadRoomFromStorage())
-  const [currentPlayer, setCurrentPlayer] = useState<Player | null>(() => {
-    const savedRoom = loadRoomFromStorage()
-    if (!savedRoom) return null
-    return savedRoom.player1 ?? savedRoom.player2 ?? null
-  })
+    const normalizedCode = roomCode.trim().toUpperCase()
+    if (!normalizedCode) return null
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key !== ROOM_STORAGE_KEY) return
-      syncRoomState(event.newValue ? JSON.parse(event.newValue) as GameState : null)
+    const key = getRoomStorageKey(normalizedCode)
+    const savedRoom = window.localStorage.getItem(key)
+    if (savedRoom) {
+      try {
+        const parsedRoom = JSON.parse(savedRoom) as GameState
+        return parsedRoom?.roomCode ? parsedRoom : null
+      } catch {
+        return null
+      }
     }
 
-    window.addEventListener('storage', handleStorage)
-    return () => window.removeEventListener('storage', handleStorage)
-  }, [syncRoomState])
+    const legacyRoom = window.localStorage.getItem(LEGACY_ROOM_STORAGE_KEY)
+    if (!legacyRoom) return null
+
+    try {
+      const parsedLegacyRoom = JSON.parse(legacyRoom) as GameState
+      return parsedLegacyRoom?.roomCode === normalizedCode ? parsedLegacyRoom : null
+    } catch {
+      return null
+    }
+  }, [])
+
+  const persistRoom = useCallback((engineToSave: GameEngine) => {
+    if (typeof window === 'undefined') return
+    const roomCode = engineToSave.getState().roomCode
+    const payload = JSON.stringify(engineToSave.getState())
+    const roomKey = getRoomStorageKey(roomCode)
+    window.localStorage.setItem(roomKey, payload)
+    window.localStorage.setItem(LEGACY_ROOM_STORAGE_KEY, payload)
+    window.localStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, roomKey)
+  }, [])
+
+  const [engine, setEngine] = useState<GameEngine | null>(null)
+  const [gameState, setGameState] = useState<GameState | null>(null)
+  const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null)
+  const [socket, setSocket] = useState<Socket | null>(null)
+  const socketRef = useRef<Socket | null>(null)
+  const currentPlayerIdRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    const configuredSocketUrl = (import.meta as ImportMeta & {
+      env?: { VITE_SOCKET_URL?: string }
+    }).env?.VITE_SOCKET_URL?.trim()
+    const socketUrl = configuredSocketUrl ||
+      (window.location.hostname === 'localhost' ? 'http://localhost:3000' : '')
+
+    if (!socketUrl) {
+      return
+    }
+
+    const newSocket = io(socketUrl, {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+    })
+
+    socketRef.current = newSocket
+    setSocket(newSocket)
+
+    return () => {
+      newSocket.disconnect()
+      socketRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!socket) return
+
+    socket.on('room:update', (payload: { room: GameState }) => {
+      if (!payload?.room) return
+      const nextEngine = GameEngine.fromState(payload.room)
+      setEngine(nextEngine)
+      setGameState(payload.room)
+      const current = [payload.room.player1, payload.room.player2]
+        .find((player) => player?.id === currentPlayerIdRef.current) ?? null
+      setCurrentPlayer(current)
+      persistRoom(nextEngine)
+    })
+
+    return () => {
+      socket.off('room:update')
+    }
+  }, [persistRoom, socket])
 
   const generateRoomCode = (): string => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
@@ -86,124 +153,195 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     for (let i = 0; i < 5; i++) {
       code += chars.charAt(Math.floor(Math.random() * chars.length))
     }
+
+    if (typeof window !== 'undefined') {
+      const roomKey = getRoomStorageKey(code)
+      const legacyRoom = window.localStorage.getItem(LEGACY_ROOM_STORAGE_KEY)
+      const hasStoredRoom = window.localStorage.getItem(roomKey) ||
+        (legacyRoom ? (JSON.parse(legacyRoom) as GameState | null)?.roomCode === code : false)
+
+      if (hasStoredRoom) {
+        return generateRoomCode()
+      }
+    }
+
     return code
   }
 
-  const createRoom = useCallback((player: Player) => {
-    const roomCode = generateRoomCode()
-    const newEngine = new GameEngine(roomCode, player.id)
-    newEngine.addPlayer(player)
+  const waitForSocket = useCallback(async (): Promise<Socket | null> => {
+    const activeSocket = socketRef.current ?? socket
+    if (!activeSocket) return null
+    if (activeSocket.connected) return activeSocket
 
-    setEngine(newEngine)
-    setGameState(newEngine.getState())
-    setCurrentPlayer(player)
-    persistRoom(newEngine)
-  }, [persistRoom])
+    return new Promise((resolve) => {
+      const timeout = window.setTimeout(() => {
+        cleanup()
+        resolve(null)
+      }, 8000)
+      const handleConnect = () => {
+        cleanup()
+        resolve(activeSocket)
+      }
+      const handleError = () => {
+        cleanup()
+        resolve(null)
+      }
+      const cleanup = () => {
+        window.clearTimeout(timeout)
+        activeSocket.off('connect', handleConnect)
+        activeSocket.off('connect_error', handleError)
+      }
 
-  const joinRoom = useCallback((roomCode: string, player: Player) => {
+      activeSocket.once('connect', handleConnect)
+      activeSocket.once('connect_error', handleError)
+      activeSocket.connect()
+    })
+  }, [socket])
+
+  const createRoom = useCallback(async (player: Player) => {
+    const activeSocket = await waitForSocket()
+    if (!activeSocket) return false
+
+    return new Promise<boolean>((resolve) => {
+      activeSocket.emit('room:create', { player }, (response: { ok: boolean, room?: GameState }) => {
+        if (!response.ok || !response.room) {
+          resolve(false)
+          return
+        }
+
+        currentPlayerIdRef.current = player.id
+        const nextEngine = GameEngine.fromState(response.room)
+        setEngine(nextEngine)
+        setGameState(response.room)
+        setCurrentPlayer(player)
+        persistRoom(nextEngine)
+        resolve(true)
+      })
+    })
+  }, [persistRoom, waitForSocket])
+
+  const joinRoom = useCallback(async (roomCode: string, player: Player) => {
     const normalizedCode = roomCode.trim().toUpperCase()
-    if (!normalizedCode) return false
+    const activeSocket = await waitForSocket()
+    if (!normalizedCode || !activeSocket) return false
 
-    const storedRoom = loadRoomFromStorage()
-    const roomToJoin = engine && engine.getState().roomCode === normalizedCode
-      ? engine
-      : storedRoom && storedRoom.roomCode === normalizedCode
-        ? GameEngine.fromState(storedRoom)
-        : null
+    let handled = false
 
-    if (!roomToJoin) return false
+    await new Promise<void>((resolve) => {
+      activeSocket.emit('room:join', { roomCode: normalizedCode, player }, (response: { ok: boolean, room?: GameState, message?: string }) => {
+        if (!response.ok || !response.room) {
+          resolve()
+          return
+        }
 
-    const nextState = roomToJoin.getState()
-    if (nextState.player1?.id === player.id || nextState.player2?.id === player.id) {
-      setEngine(roomToJoin)
-      setGameState(nextState)
-      setCurrentPlayer(player)
-      return true
+        handled = true
+        currentPlayerIdRef.current = player.id
+        const nextEngine = GameEngine.fromState(response.room)
+        setEngine(nextEngine)
+        setGameState(response.room)
+        setCurrentPlayer(player)
+        persistRoom(nextEngine)
+        resolve()
+      })
+    })
+
+    return handled
+  }, [persistRoom, waitForSocket])
+
+  const publishRoom = useCallback((nextEngine: GameEngine) => {
+    const activeSocket = socketRef.current
+    const nextState = nextEngine.getState()
+    if (activeSocket?.connected) {
+      activeSocket.emit('room:update', {
+        roomCode: nextState.roomCode,
+        room: nextState,
+      })
     }
+  }, [])
 
-    if (nextState.player1 && nextState.player2) return false
-
-    roomToJoin.addPlayer(player)
-    setEngine(roomToJoin)
-    setGameState(roomToJoin.getState())
-    setCurrentPlayer(player)
-    persistRoom(roomToJoin)
-    return true
-  }, [engine, loadRoomFromStorage, persistRoom])
+  const saveAndPublish = useCallback((nextEngine: GameEngine) => {
+    setGameState(nextEngine.getState())
+    persistRoom(nextEngine)
+    publishRoom(nextEngine)
+  }, [persistRoom, publishRoom])
 
   const updateSettings = useCallback((settings: RoomSettings) => {
     if (engine) {
       engine.updateSettings(settings)
       engine.initializeRounds()
-      setGameState(engine.getState())
-      persistRoom(engine)
+      saveAndPublish(engine)
     }
-  }, [engine, persistRoom])
+  }, [engine, saveAndPublish])
 
   const startGame = useCallback(() => {
     if (engine) {
       engine.startGame()
-      setGameState(engine.getState())
-      persistRoom(engine)
+      saveAndPublish(engine)
     }
-  }, [engine, persistRoom])
+  }, [engine, saveAndPublish])
 
   const submitAnswer = useCallback((answer: string | number) => {
     if (engine && currentPlayer) {
       engine.submitAnswer(currentPlayer.id, answer)
-      setGameState(engine.getState())
-      persistRoom(engine)
+      saveAndPublish(engine)
     }
-  }, [engine, currentPlayer, persistRoom])
+  }, [engine, currentPlayer, saveAndPublish])
 
   const lockAnswer = useCallback(() => {
     if (engine && currentPlayer) {
       engine.lockAnswer(currentPlayer.id)
-      setGameState(engine.getState())
-      persistRoom(engine)
+      saveAndPublish(engine)
     }
-  }, [engine, currentPlayer, persistRoom])
+  }, [engine, currentPlayer, saveAndPublish])
 
   const nextRound = useCallback(() => {
     if (engine) {
       engine.nextRound()
-      setGameState(engine.getState())
-      persistRoom(engine)
+      saveAndPublish(engine)
     }
-  }, [engine, persistRoom])
+  }, [engine, saveAndPublish])
 
   const skipRound = useCallback(() => {
     if (engine) {
       engine.skipRound()
-      setGameState(engine.getState())
-      persistRoom(engine)
+      saveAndPublish(engine)
     }
-  }, [engine, persistRoom])
+  }, [engine, saveAndPublish])
 
   const calculateScore = useCallback((isCorrect: boolean) => {
     if (engine && currentPlayer && engine.getCurrentRound()) {
       const basePoints = engine.getCurrentRound()?.points || 0
       engine.calculateScore(currentPlayer.id, isCorrect, basePoints)
-      setGameState(engine.getState())
-      persistRoom(engine)
+      saveAndPublish(engine)
     }
-  }, [engine, currentPlayer, persistRoom])
+  }, [engine, currentPlayer, saveAndPublish])
+
+  const finishRound = useCallback((player1Correct: boolean, player2Correct: boolean) => {
+    if (!engine || currentPlayer?.id !== engine.getState().hostId) return
+
+    const round = engine.getCurrentRound()
+    const state = engine.getState()
+    if (!round || !state.player1 || !state.player2) return
+
+    engine.calculateScore(state.player1.id, player1Correct, round.points)
+    engine.calculateScore(state.player2.id, player2Correct, round.points)
+    engine.nextRound()
+    saveAndPublish(engine)
+  }, [currentPlayer, engine, saveAndPublish])
 
   const endGame = useCallback(() => {
     if (engine) {
       engine.endGame()
-      setGameState(engine.getState())
-      persistRoom(engine)
+      saveAndPublish(engine)
     }
-  }, [engine, persistRoom])
+  }, [engine, saveAndPublish])
 
   const restartGame = useCallback(() => {
     if (engine) {
       engine.restartGame()
-      setGameState(engine.getState())
-      persistRoom(engine)
+      saveAndPublish(engine)
     }
-  }, [engine, persistRoom])
+  }, [engine, saveAndPublish])
 
   const value: GameContextType = {
     engine,
@@ -218,6 +356,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     nextRound,
     skipRound,
     calculateScore,
+    finishRound,
     endGame,
     restartGame,
   }

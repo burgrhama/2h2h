@@ -4,7 +4,7 @@ import { useGame } from '../../context/GameContext'
 import CountdownTimer from '../CountdownTimer'
 
 export default function RoundTextGuess() {
-  const { gameState, currentPlayer, engine, submitAnswer, lockAnswer } = useGame()
+  const { gameState, currentPlayer, engine, submitAnswer, lockAnswer, finishRound } = useGame()
   const [textInput, setTextInput] = useState('')
 
   if (!gameState || !currentPlayer || !engine) return null
@@ -29,6 +29,10 @@ export default function RoundTextGuess() {
 
     const similarity = calculateSimilarity(String(myAnswer), String(otherAnswer))
     const isCorrect = similarity > 0.6
+    const player1Correct = calculateSimilarity(
+      String(gameState.player1Answer),
+      String(gameState.player2Answer)
+    ) > 0.6
 
     return (
       <motion.div
@@ -82,9 +86,11 @@ export default function RoundTextGuess() {
         <motion.button
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
+          onClick={() => finishRound(player1Correct, player1Correct)}
+          disabled={currentPlayer.id !== gameState.hostId}
           className="glass-button-primary w-full py-4"
         >
-          NEXT ROUND
+          {currentPlayer.id === gameState.hostId ? 'NEXT ROUND' : 'WAITING FOR HOST'}
         </motion.button>
       </motion.div>
     )
