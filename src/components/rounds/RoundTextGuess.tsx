@@ -82,7 +82,7 @@ export default function RoundTextGuess() {
             </>
           )}
           <p className="text-sm text-game-pink mt-4">
-            {isCorrect ? 'No blink this round.' : 'MISS: take 1 blink.'}
+            {isCorrect ? 'No hit this round.' : 'MISS: take 1 hit.'}
           </p>
         </motion.div>
 

@@ -14,8 +14,8 @@ export default function ResultsPage() {
 
   const p1Score = gameState.scores[player1.id] || 0
   const p2Score = gameState.scores[player2.id] || 0
-  const p1Blinks = gameState.blinks[player1.id] || 0
-  const p2Blinks = gameState.blinks[player2.id] || 0
+  const p1Hits = gameState.hits[player1.id] || 0
+  const p2Hits = gameState.hits[player2.id] || 0
   const winner = engine.getWinner()
   const isTie = engine.isTie()
 
@@ -92,7 +92,7 @@ export default function ResultsPage() {
             >
               ⭐ {p1Score}
             </motion.p>
-            <p className="text-game-pink mt-2">💨 {p1Blinks} BLINK{p1Blinks === 1 ? '' : 'S'}</p>
+            <p className="text-game-pink mt-2">💨 {p1Hits} HIT{p1Hits === 1 ? '' : 'S'}</p>
           </motion.div>
 
           <motion.div
@@ -111,7 +111,7 @@ export default function ResultsPage() {
             >
               ⭐ {p2Score}
             </motion.p>
-            <p className="text-game-pink mt-2">💨 {p2Blinks} BLINK{p2Blinks === 1 ? '' : 'S'}</p>
+            <p className="text-game-pink mt-2">💨 {p2Hits} HIT{p2Hits === 1 ? '' : 'S'}</p>
           </motion.div>
         </div>
 
