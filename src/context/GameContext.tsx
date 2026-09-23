@@ -458,6 +458,8 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     engine.calculateScore(state.player1.id, player1Correct, round.points)
     engine.calculateScore(state.player2.id, player2Correct, round.points)
+    if (!player1Correct) engine.addBlink(state.player1.id)
+    if (!player2Correct) engine.addBlink(state.player2.id)
     engine.nextRound()
     saveAndPublish(engine)
   }, [currentPlayer, engine, saveAndPublish])

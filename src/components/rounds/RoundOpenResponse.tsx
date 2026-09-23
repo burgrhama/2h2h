@@ -36,6 +36,7 @@ export default function RoundOpenResponse() {
           <div className="glass-card p-4"><p className="text-xs text-white/50 mb-2">YOUR ANSWER</p><p className="break-words">{isP1 ? gameState.player1Answer : gameState.player2Answer}</p></div>
           <div className="glass-card p-4"><p className="text-xs text-white/50 mb-2">THEIR ANSWER</p><p className="break-words">{otherAnswer}</p></div>
         </div>
+        <p className="text-center text-sm text-game-pink mb-5">Blinks are virtual in-game penalties.</p>
         <button
           onClick={() => finishRound(true, true)}
           disabled={currentPlayer.id !== gameState.hostId}

@@ -24,6 +24,7 @@ export interface GameState {
   player1Locked: boolean
   player2Locked: boolean
   scores: { [key: string]: number }
+  blinks: { [key: string]: number }
   difficulty: Difficulty
   enabledCategories: GameCategory[]
   createdAt: number
@@ -55,6 +56,7 @@ class GameEngine {
       player1Locked: false,
       player2Locked: false,
       scores: {},
+      blinks: {},
       difficulty: 'chill',
       enabledCategories: [
         'guess-me',
@@ -78,7 +80,10 @@ class GameEngine {
 
   static fromState(state: GameState): GameEngine {
     const engine = new GameEngine(state.roomCode, state.hostId)
-    engine.gameState = state
+    engine.gameState = {
+      ...state,
+      blinks: state.blinks || {},
+    }
     return engine
   }
 
@@ -86,9 +91,11 @@ class GameEngine {
     if (!this.gameState.player1) {
       this.gameState.player1 = player
       this.gameState.scores[player.id] = 0
+      this.gameState.blinks[player.id] = 0
     } else if (!this.gameState.player2) {
       this.gameState.player2 = player
       this.gameState.scores[player.id] = 0
+      this.gameState.blinks[player.id] = 0
     }
   }
 
@@ -168,6 +175,10 @@ class GameEngine {
     }
   }
 
+  addBlink(playerId: string): void {
+    this.gameState.blinks[playerId] = (this.gameState.blinks[playerId] || 0) + 1
+  }
+
   nextRound(): void {
     this.gameState.currentRound++
     this.gameState.player1Answer = null
@@ -199,6 +210,8 @@ class GameEngine {
     this.gameState.gameState = 'SETTINGS'
     if (this.gameState.player1) this.gameState.scores[this.gameState.player1.id] = 0
     if (this.gameState.player2) this.gameState.scores[this.gameState.player2.id] = 0
+    if (this.gameState.player1) this.gameState.blinks[this.gameState.player1.id] = 0
+    if (this.gameState.player2) this.gameState.blinks[this.gameState.player2.id] = 0
   }
 
   getWinner(): Player | null {

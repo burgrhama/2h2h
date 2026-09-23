@@ -31,6 +31,8 @@ export default function GamePage() {
 
   const player1Score = gameState.scores[player1.id] || 0
   const player2Score = gameState.scores[player2.id] || 0
+  const player1Blinks = gameState.blinks[player1.id] || 0
+  const player2Blinks = gameState.blinks[player2.id] || 0
   const isCurrentPlayerP1 = currentPlayer.id === player1.id
 
   const renderRound = () => {
@@ -64,6 +66,7 @@ export default function GamePage() {
               ROUND {gameState.currentRound + 1} / {gameState.totalRounds}
             </p>
             <div className="w-full bg-white/5 rounded-full h-2">
+              <p className="text-sm text-game-pink mt-2">💨 {player1Blinks} BLINK{player1Blinks === 1 ? '' : 'S'}</p>
               <motion.div
                 layoutId="progress"
                 className="bg-gradient-to-r from-game-purple to-game-pink h-full rounded-full"
@@ -79,6 +82,7 @@ export default function GamePage() {
 
         {/* Scoreboard */}
         <div className="grid grid-cols-2 gap-4 mb-8">
+          <p className="text-sm text-game-pink mt-2">💨 {player2Blinks} BLINK{player2Blinks === 1 ? '' : 'S'}</p>
           <motion.div
             className={`glass-card p-4 text-center transition ${
               isCurrentPlayerP1 ? 'ring-2 ring-game-purple' : ''

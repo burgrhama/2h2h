@@ -101,6 +101,9 @@ export default function RoundChoice() {
               <p className="text-white/60">Better luck next round!</p>
             </>
           )}
+          <p className="text-sm text-game-pink mt-4">
+            {isCorrect ? 'No blink this round.' : 'MISS: take 1 blink.'}
+          </p>
         </motion.div>
 
         <motion.button

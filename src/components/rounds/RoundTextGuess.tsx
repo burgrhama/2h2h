@@ -81,6 +81,9 @@ export default function RoundTextGuess() {
               <p className="text-white/60">You're learning about each other!</p>
             </>
           )}
+          <p className="text-sm text-game-pink mt-4">
+            {isCorrect ? 'No blink this round.' : 'MISS: take 1 blink.'}
+          </p>
         </motion.div>
 
         <motion.button
